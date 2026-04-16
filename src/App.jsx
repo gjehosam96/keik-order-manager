@@ -902,7 +902,9 @@ export default function App(){
             const nid=Number(refundModal.id);
             setOrders(p=>p.map(o=>Number(o.id)!==nid?o:{...o,historyStatus:"REFUND",refundReason:r}));
             if(SB.ok()){const ok=await SB.upd("orders",nid,{history_status:"REFUND",refund_reason:r});if(ok){await new Promise(rv=>setTimeout(rv,500));await loadOrders();}}
-            await postSheet(sett.sheetsUrl,{sheetType:"refund",timestamp:new Date().toLocaleString("id-ID"),nama:refundModal.nama,noHp:refundModal.noHp,alamat:refundModal.alamat||"-",tanggalKirim:refundModal.tanggalKirim,pengiriman:refundModal.pengiriman,orderan:(refundModal.items||[]).map(it=>itemLabel(it)+" x"+it.qty).join(", "),total:refundModal.total,alasan:r,pic:user?.name||"-"});
+            const refundPayload={sheetType:"refund",timestamp:new Date().toLocaleString("id-ID"),nama:refundModal.nama,noHp:refundModal.noHp,alamat:refundModal.alamat||"-",tanggalKirim:refundModal.tanggalKirim,pengiriman:refundModal.pengiriman,orderan:(refundModal.items||[]).map(it=>itemLabel(it)+" x"+it.qty).join(", "),total:refundModal.total,alasan:r,pic:user?.name||"-"};
+            await postSheet(sett.sheetsUrl,refundPayload);
+            await postSheet(sett.sheetsUrlStaff,refundPayload);
             setRefundModal(null);
           }finally{setTimeout(()=>{busy.current=false;},2000);}
         }}/>}
