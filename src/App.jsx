@@ -272,25 +272,39 @@ export default function App(){
   useEffect(()=>{
     (async()=>{
       try{
-        const r=await window.storage.get("keik-settings");
-        if(r&&r.value){
-          const s={...DEFAULT_SETT,...JSON.parse(r.value)};
+        let val=null;
+        if(window.storage&&window.storage.get){
+          const r=await window.storage.get("keik-settings");
+          if(r&&r.value)val=r.value;
+        }else{
+          val=localStorage.getItem("keik-settings");
+        }
+        if(val){
+          const s={...DEFAULT_SETT,...JSON.parse(val)};
           setSett(s);
           if(s.supaUrl&&s.supaKey)SB.init(s.supaUrl,s.supaKey);
         }else if(DEFAULT_SETT.supaUrl&&DEFAULT_SETT.supaKey){
           SB.init(DEFAULT_SETT.supaUrl,DEFAULT_SETT.supaKey);
         }
-      }catch(e){}
+      }catch(e){console.error("load settings error:",e);}
     })();
   },[]);
 
   const saveSettings=async()=>{
     try{
-      await window.storage.set("keik-settings",JSON.stringify(sett));
+      // Coba window.storage dulu (artifact), fallback ke localStorage (Vercel/browser biasa)
+      if(window.storage&&window.storage.set){
+        await window.storage.set("keik-settings",JSON.stringify(sett));
+      }else{
+        localStorage.setItem("keik-settings",JSON.stringify(sett));
+      }
       if(sett.supaUrl&&sett.supaKey){SB.init(sett.supaUrl,sett.supaKey);loadOrders();loadBoxData();}
       setSettSaved(true);
       setTimeout(()=>setSettSaved(false),2000);
-    }catch(e){alert("Gagal menyimpan settings.");}
+    }catch(e){
+      console.error("saveSettings error:",e);
+      alert("Gagal menyimpan settings: "+(e.message||e));
+    }
   };
   const[raw,setRaw]=useState("");
   const[parsing,setParsing]=useState(false);
@@ -364,11 +378,19 @@ export default function App(){
     }catch(e){console.error("loadOrders error:",e);}
   };
   const loadBoxData=async()=>{
-    if(!SB.ok()){
-      // fallback: load dari persistent storage
-      try{const r=await window.storage.get("keik-box");if(r&&r.value){const d=JSON.parse(r.value);if(d.inv)setBoxInv(d.inv);if(d.active)setBoxActive(d.active);}}catch(e){}
-      return;
-    }
+    const loadLocal=async()=>{
+      try{
+        let val=null;
+        if(window.storage&&window.storage.get){
+          const r=await window.storage.get("keik-box");
+          if(r&&r.value)val=r.value;
+        }else{
+          val=localStorage.getItem("keik-box");
+        }
+        if(val){const d=JSON.parse(val);if(d.inv)setBoxInv(d.inv);if(d.active)setBoxActive(d.active);if(d.logs)setBoxLogs(d.logs);}
+      }catch(e){}
+    };
+    if(!SB.ok()){await loadLocal();return;}
     const data=await SB.get("box_inventory","select=*");
     if(data&&data.length>0){
       const inv={},act={};
@@ -382,21 +404,20 @@ export default function App(){
 
   // Load data on mount + auto-refresh setiap 15 detik
   useEffect(()=>{
-    const t=setTimeout(()=>{if(SB.ok()){loadOrders();loadBoxData();}},1500);
+    const t=setTimeout(()=>{if(SB.ok()){loadOrders();loadBoxData();}else{loadBoxData();}},1500);
     const iv=setInterval(()=>{if(SB.ok()&&!busy.current){loadOrders();loadBoxData();}},15000);
     return()=>{clearTimeout(t);clearInterval(iv);};
   },[]);
 
-  // Fallback: load box dari persistent storage jika Supabase belum di-setup
-  useEffect(()=>{
-    if(!SB.ok()){
-      (async()=>{
-        try{const r=await window.storage.get("keik-box");if(r&&r.value){const d=JSON.parse(r.value);if(d.inv)setBoxInv(d.inv);if(d.active)setBoxActive(d.active);if(d.logs)setBoxLogs(d.logs);}}catch(e){}
-      })();
-    }
-  },[]);
   const saveBox=async(inv,active,logs)=>{
-    try{await window.storage.set("keik-box",JSON.stringify({inv,active,logs}));}catch(e){}
+    try{
+      const payload=JSON.stringify({inv,active,logs});
+      if(window.storage&&window.storage.set){
+        await window.storage.set("keik-box",payload);
+      }else{
+        localStorage.setItem("keik-box",payload);
+      }
+    }catch(e){}
     // Also save to Supabase if available
     if(SB.ok()){
       for(const bt of BOX_TYPES){for(const bc of BOX_CATS){
