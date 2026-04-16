@@ -594,73 +594,81 @@ export default function App(){
     const dc=disc.show&&disc.amount>0?`\n🏷️ Discount = -${rp(disc.amount)}`:"";
     setPesan(`📦 *ORDER BARU*\n━━━━━━━━━━━━━━\n👤 Nama      : ${form.nama}\n📍 Alamat    : ${form.alamat}\n📱 No HP     : ${form.noHp}\n📅 Kirim     : ${form.tanggalKirim}\n🚚 Pengiriman: ${form.pengiriman}\n📦 Box       : ${form.jenisBox}\n\n🛒 *ORDERAN:*\n${lines}${og}${dc}\n\n💰 *TOTAL: ${rp(total)}*${form.keterangan?"\n\n📝 Ket: "+form.keterangan:""}\n\n━━━━━━━━━━━━━━\n💳 Transfer ke REKENING BCA\n*5271350849 - Geraldi Jehosam S*\n\nOrderan akan masuk ke dalam list setelah melakukan pembayaran dan sertakan bukti pembayaran\n\nTerima kasih\n\n_Keik Cakery_ 🍰`);
   };
+  const parseLocal=(t)=>{
+    const find=(regex)=>{const m=t.match(regex);return m?m[1].trim():"";};
+    let nama=find(/(?:nama|Nama|NAMA)\s*[:\-]?\s*(.+)/i);
+    const hpMatch=t.match(/(?:hp|HP|wa|WA|telp|nomor|no\.?\s*hp|no\.?\s*telp|phone)\s*[:\-]?\s*([\+\-\s\d]{9,20})/i)||t.match(/(\+?62[\-\s\d]{9,16})/)||t.match(/(08[\-\s\d]{8,14})/);
+    let noHp=hpMatch?hpMatch[1].replace(/[\s\-]/g,""):"";
+    if(noHp.startsWith("+62"))noHp="0"+noHp.slice(3);
+    if(noHp.startsWith("62"))noHp="0"+noHp.slice(2);
+    let alamat=find(/(?:alamat|Alamat|ALAMAT)\s*[:\-]?\s*(.+?)(?:\n\n|\n[A-Z][a-z]+\s*[:\-]|$)/s);
+    if(!alamat){
+      const lines=t.split(/\n/);
+      for(const line of lines){if(/\b(jl\.?|jalan|apartemen|apt\.?|ruko|toko|perumahan|kompleks|komp\.?|blok|rt\/?rw|kelurahan|kecamatan|desa)\b/i.test(line)){alamat=line.trim();break;}}
+    }
+    const tgMatch=t.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+    let tanggalKirim="";
+    if(tgMatch){const y=tgMatch[3].length===2?"20"+tgMatch[3]:tgMatch[3];tanggalKirim=`${tgMatch[1].padStart(2,"0")}-${tgMatch[2].padStart(2,"0")}-${y}`;}
+    let pengiriman="Pickup";
+    if(/tiki/i.test(t))pengiriman="TIKI";
+    else if(/instant|grab|gojek|gosend/i.test(t))pengiriman="Instant";
+    let jenisBox="";
+    if(/sincia/i.test(t))jenisBox="Sincia";
+    else if(/imlek/i.test(t))jenisBox="Imlek";
+    else if(/natal/i.test(t))jenisBox="Natal";
+    else if(/polos/i.test(t))jenisBox="Polos";
+    else if(/biasa/i.test(t))jenisBox="Box Biasa";
+    const foundItems=[];
+    const lapisProducts=[["Lapis Bulat","lapis\\s*bulat"],["Lapis Persegi","lapis\\s*persegi"],["Lapis 11x22","lapis\\s*11\\s*x\\s*22|11\\s*x\\s*22"],["Lapis 10x10","lapis\\s*10\\s*x\\s*10|10\\s*x\\s*10"],["Lapis Mini Bites","mini\\s*bites|lapis\\s*mini"],["Lapis Mix 4 Rasa","mix\\s*4\\s*rasa|mix\\s*rasa"]];
+    const keringProducts=[["Nastar Wisman","nastar"],["Kastengel","kastengel|kastengels"],["Lidah Kucing","lidah\\s*kucing"],["Putri Salju","putri\\s*salju"],["Semprit Mawar","semprit"],["Sagu Keju","sagu\\s*keju"]];
+    const rasaList=["Original","Plum","Keju","Coklat","Almond","Nanas"];
+    t.split(/\n/).forEach(line=>{
+      const qtyMatch=line.match(/\b(\d+)\s*(?:pcs|box|buah|x|pc|\*)?\b/i);
+      const qty=qtyMatch?parseInt(qtyMatch[1]):1;
+      lapisProducts.forEach(([name,pat])=>{
+        if(new RegExp(pat,"i").test(line)){
+          const mentega=/wisman|wysman/i.test(line)?"Wisman":"Butter";
+          let rasa="Original";
+          for(const r of rasaList){if(new RegExp(r,"i").test(line)){rasa=r;break;}}
+          const harga=autoPrice("lapis",name,mentega,rasa);
+          foundItems.push({...mkItem(),kat:"lapis",produk:name,mentega,rasa,qty,harga});
+        }
+      });
+      keringProducts.forEach(([name,pat])=>{
+        if(new RegExp(pat,"i").test(line)){
+          const harga=autoPrice("kering",name);
+          foundItems.push({...mkItem(),kat:"kering",produk:name,qty,harga});
+        }
+      });
+    });
+    return {nama,alamat,noHp,tanggalKirim,pengiriman,jenisBox,keterangan:"",items:foundItems};
+  };
+
+  const applyParseResult=(p)=>{
+    setForm(f=>({...f,nama:p.nama||"",alamat:p.alamat||"",noHp:(p.noHp||"").replace(/\s/g,""),tanggalKirim:p.tanggalKirim||"",pengiriman:p.pengiriman||"Pickup",jenisBox:p.jenisBox||"",keterangan:p.keterangan||f.keterangan}));
+    if(p.items?.length){
+      setItems(p.items.map(it=>{const b={...mkItem(),...it};b.harga=autoPrice(b.kat,b.produk,b.mentega,b.rasa)||b.harga||0;return b;}));
+    }
+  };
+
   const parseAI=async()=>{
     if(!raw.trim())return; setParsing(true);
+    // Coba AI parse via Vercel serverless function dulu
     try{
-      const t=raw;
-      const find=(regex)=>{const m=t.match(regex);return m?m[1].trim():"";};
-      // Nama
-      let nama=find(/(?:nama|Nama|NAMA)\s*[:\-]?\s*(.+)/i);
-      // No HP — deteksi sequence angka 10-15 digit dengan optional +/-/spaces
-      const hpMatch=t.match(/(?:hp|HP|wa|WA|telp|nomor|no\.?\s*hp|no\.?\s*telp|phone)\s*[:\-]?\s*([\+\-\s\d]{9,20})/i)||t.match(/(\+?62[\-\s\d]{9,16})/)||t.match(/(08[\-\s\d]{8,14})/);
-      let noHp=hpMatch?hpMatch[1].replace(/[\s\-]/g,""):"";
-      if(noHp.startsWith("+62"))noHp="0"+noHp.slice(3);
-      if(noHp.startsWith("62"))noHp="0"+noHp.slice(2);
-      // Alamat — cari pattern "Alamat:" atau keyword lokasi
-      let alamat=find(/(?:alamat|Alamat|ALAMAT)\s*[:\-]?\s*(.+?)(?:\n\n|\n[A-Z][a-z]+\s*[:\-]|$)/s);
-      if(!alamat){
-        // Fallback: cari baris yang mengandung keyword lokasi
-        const lines=t.split(/\n/);
-        for(const line of lines){
-          if(/\b(jl\.?|jalan|apartemen|apt\.?|ruko|toko|perumahan|kompleks|komp\.?|blok|rt\/?rw|kelurahan|kecamatan|desa)\b/i.test(line)){
-            alamat=line.trim();
-            break;
-          }
-        }
+      const res=await fetch("/api/parse-order",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:raw})});
+      if(res.ok){
+        const p=await res.json();
+        applyParseResult(p);
+        alert(`✨ AI Parse selesai!\nDitemukan: ${p.items?.length||0} item`);
+        setParsing(false);
+        return;
       }
-      // Tanggal kirim DD-MM-YYYY atau DD/MM/YYYY
-      const tgMatch=t.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
-      let tanggalKirim="";
-      if(tgMatch){const y=tgMatch[3].length===2?"20"+tgMatch[3]:tgMatch[3];tanggalKirim=`${tgMatch[1].padStart(2,"0")}-${tgMatch[2].padStart(2,"0")}-${y}`;}
-      // Pengiriman
-      let pengiriman="Pickup";
-      if(/tiki/i.test(t))pengiriman="TIKI";
-      else if(/instant|grab|gojek|gosend/i.test(t))pengiriman="Instant";
-      // Jenis box
-      let jenisBox="";
-      if(/sincia/i.test(t))jenisBox="Sincia";
-      else if(/imlek/i.test(t))jenisBox="Imlek";
-      else if(/natal/i.test(t))jenisBox="Natal";
-      else if(/polos/i.test(t))jenisBox="Polos";
-      else if(/biasa/i.test(t))jenisBox="Box Biasa";
-      // Items — cari produk KEIK
-      const foundItems=[];
-      const lapisProducts=[["Lapis Bulat","lapis\\s*bulat"],["Lapis Persegi","lapis\\s*persegi"],["Lapis 11x22","lapis\\s*11\\s*x\\s*22|11\\s*x\\s*22"],["Lapis 10x10","lapis\\s*10\\s*x\\s*10|10\\s*x\\s*10"],["Lapis Mini Bites","mini\\s*bites|lapis\\s*mini"],["Lapis Mix 4 Rasa","mix\\s*4\\s*rasa|mix\\s*rasa"]];
-      const keringProducts=[["Nastar Wisman","nastar"],["Kastengel","kastengel|kastengels"],["Lidah Kucing","lidah\\s*kucing"],["Putri Salju","putri\\s*salju"],["Semprit Mawar","semprit"],["Sagu Keju","sagu\\s*keju"]];
-      const rasaList=["Original","Plum","Keju","Coklat","Almond","Nanas"];
-      // Parse per line untuk items
-      t.split(/\n/).forEach(line=>{
-        const qtyMatch=line.match(/\b(\d+)\s*(?:pcs|box|buah|x|pc|\*)?\b/i);
-        const qty=qtyMatch?parseInt(qtyMatch[1]):1;
-        lapisProducts.forEach(([name,pat])=>{
-          if(new RegExp(pat,"i").test(line)){
-            const mentega=/wisman|wysman/i.test(line)?"Wisman":"Butter";
-            let rasa="Original";
-            for(const r of rasaList){if(new RegExp(r,"i").test(line)){rasa=r;break;}}
-            const harga=autoPrice("lapis",name,mentega,rasa);
-            foundItems.push({...mkItem(),kat:"lapis",produk:name,mentega,rasa,qty,harga});
-          }
-        });
-        keringProducts.forEach(([name,pat])=>{
-          if(new RegExp(pat,"i").test(line)){
-            const harga=autoPrice("kering",name);
-            foundItems.push({...mkItem(),kat:"kering",produk:name,qty,harga});
-          }
-        });
-      });
-      setForm(f=>({...f,nama,alamat,noHp,tanggalKirim,pengiriman,jenisBox,keterangan:f.keterangan}));
-      if(foundItems.length)setItems(foundItems);
-      alert(`✅ Parse selesai!\nDitemukan: ${foundItems.length} item\nSilakan cek & lengkapi data yang belum terisi.`);
+    }catch(e){console.warn("AI parse gagal, fallback ke local:",e);}
+    // Fallback ke parse lokal
+    try{
+      const p=parseLocal(raw);
+      applyParseResult(p);
+      alert(`✅ Parse selesai (mode lokal)!\nDitemukan: ${p.items.length} item\nSilakan cek & lengkapi data yang belum terisi.`);
     }catch(e){alert("Gagal parse. Silakan isi manual.");}
     setParsing(false);
   };
@@ -996,7 +1004,7 @@ export default function App(){
         <div className="card">
           <h3 style={{margin:"0 0 12px",fontSize:15,fontWeight:700}}>🤖 Parse Data Mentah dengan AI</h3>
           <textarea value={raw} onChange={e=>setRaw(e.target.value)} rows={4} placeholder={"Nama: Budi\nHP: +628-1916-2022\nKirim: 10-04-2025, TIKI\nOrder: Lapis Bulat Keju x2"} className="inp" style={{resize:"vertical",height:90}}/>
-          <button className="btn" style={{background:parsing||!raw.trim()?"#94a3b8":"#7c3aed",color:"#fff",marginTop:8}} onClick={parseAI} disabled={parsing||!raw.trim()}>{parsing?"⏳ Memproses...":"✨ Auto-Fill dari Teks"}</button>
+          <button className="btn" style={{background:parsing||!raw.trim()?"#94a3b8":"#7c3aed",color:"#fff",marginTop:8}} onClick={parseAI} disabled={parsing||!raw.trim()}>{parsing?"⏳ Memproses...":"✨ Parse dengan AI"}</button>
         </div>
         <div className="card">
           <h3 style={{margin:"0 0 12px",fontSize:15,fontWeight:700}}>👤 Data Pelanggan</h3>
