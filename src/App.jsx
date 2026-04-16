@@ -421,7 +421,7 @@ export default function App(){
   const subtotal=items.reduce((s,i)=>s+Number(i.harga||0)*Number(i.qty||0),0);
   const total=subtotal+calcOng()-(disc.show?Number(disc.amount||0):0);
   const pending=orders.filter(o=>o.status==="NOT PAID");
-  const paid=orders.filter(o=>o.status==="PAID"&&!o.historyStatus);
+  const paid=orders.filter(o=>o.status==="PAID"&&(!o.historyStatus||o.historyStatus===""||o.historyStatus==="null"));
   const filtPaid=listFilter?paid.filter(o=>o.tanggalKirim===listFilter):paid;
   const hist=orders.filter(o=>o.historyStatus==="SEND"||o.historyStatus==="REFUND");
   const filtHist=hist
@@ -530,26 +530,22 @@ export default function App(){
     try{
       const nid=Number(id);
       const o=orders.find(x=>Number(x.id)===nid);
-      setOrders(p=>p.map(x=>Number(x.id)!==nid?x:{...x,status:"PAID"}));
-      if(SB.ok()){
-        const ok=await SB.upd("orders",nid,{status:"PAID"});
-        if(ok){await new Promise(r=>setTimeout(r,500));await loadOrders();}
-      }
-      if(o)await syncToSheets({...o,status:"PAID"});
+      // Update state lokal langsung — jangan tunggu Supabase
+      setOrders(p=>p.map(x=>Number(x.id)!==nid?x:{...x,status:"PAID",historyStatus:null}));
+      // Supabase update di background (tidak reload)
+      if(SB.ok())SB.upd("orders",nid,{status:"PAID",history_status:null});
+      if(o)syncToSheets({...o,status:"PAID"});
     }catch(e){console.error("markAsPaid error:",e);}
-    finally{setTimeout(()=>{busy.current=false;},2000);}
+    finally{setTimeout(()=>{busy.current=false;},3000);}
   };
   const markSend=async id=>{
     busy.current=true;
     try{
       const nid=Number(id);
       setOrders(p=>p.map(o=>Number(o.id)!==nid?o:{...o,historyStatus:"SEND"}));
-      if(SB.ok()){
-        const ok=await SB.upd("orders",nid,{history_status:"SEND"});
-        if(ok){await new Promise(r=>setTimeout(r,500));await loadOrders();}
-      }
+      if(SB.ok())SB.upd("orders",nid,{history_status:"SEND"});
     }catch(e){console.error("markSend error:",e);}
-    finally{setTimeout(()=>{busy.current=false;},2000);}
+    finally{setTimeout(()=>{busy.current=false;},3000);}
   };
   const[editItems,setEditItems]=useState([]);
   const openEdit=o=>{setEditModal(o);setEditForm({nama:o.nama,noHp:o.noHp,alamat:o.alamat,tanggalKirim:o.tanggalKirim,pengiriman:o.pengiriman,jenisBox:o.jenisBox,keterangan:o.keterangan,status:o.status});setEditItems(JSON.parse(JSON.stringify(o.items||[])));};
