@@ -1,6 +1,6 @@
 // api/sheets-proxy.js
-// Vercel Serverless — kirim data ke Google Sheets
-// Handle redirect 302 dari Google Apps Script
+// POST sekali ke Google Apps Script, abaikan redirect
+// Google sudah menjalankan script SEBELUM kirim redirect 302
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -13,32 +13,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = JSON.stringify(payload);
-
-    // Step 1: POST ke URL Apps Script (akan redirect 302)
-    const r1 = await fetch(url, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: body,
+      body: JSON.stringify(payload),
       redirect: 'manual'
     });
 
-    // Step 2: Kalau redirect, POST ulang ke URL tujuan dengan body yang sama
-    if (r1.status >= 300 && r1.status < 400) {
-      const redirectUrl = r1.headers.get('location');
-      if (redirectUrl) {
-        const r2 = await fetch(redirectUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: body,
-          redirect: 'follow'
-        });
-        return res.status(200).json({ ok: true, status: r2.status });
-      }
-    }
-
-    // Kalau tidak redirect (langsung 200)
-    return res.status(200).json({ ok: true, status: r1.status });
+    // Status 302 = Google sudah proses, redirect ke output page (abaikan)
+    // Status 200 = langsung berhasil
+    return res.status(200).json({ ok: true, status: response.status });
   } catch (error) {
     return res.status(500).json({ ok: false, error: error.message });
   }
