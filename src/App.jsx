@@ -495,33 +495,12 @@ export default function App(){
 
   const postSheet=(url,body)=>{
     if(!url)return;
-    try{
-      // Gunakan hidden form + iframe (tembus sandbox artifact)
-      const iframeName="sheets_iframe_"+Date.now();
-      let iframe=document.createElement("iframe");
-      iframe.name=iframeName;
-      iframe.style.cssText="position:absolute;width:0;height:0;border:0;visibility:hidden";
-      document.body.appendChild(iframe);
-
-      const form=document.createElement("form");
-      form.method="POST";
-      form.action=url;
-      form.target=iframeName;
-      form.enctype="application/x-www-form-urlencoded";
-      form.style.display="none";
-
-      const input=document.createElement("input");
-      input.type="hidden";
-      input.name="data";
-      input.value=JSON.stringify(body);
-      form.appendChild(input);
-
-      document.body.appendChild(form);
-      form.submit();
-
-      // Cleanup setelah 10 detik
-      setTimeout(()=>{try{document.body.removeChild(form);document.body.removeChild(iframe);}catch(e){}},10000);
-    }catch(e){console.error("postSheet error:",e);}
+    // Kirim via Vercel serverless proxy (bypass CORS)
+    fetch("/api/sheets-proxy",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url:url,payload:body})
+    }).catch(e=>console.error("sheets proxy error:",e));
   };
   const syncToSheets=async o=>{
     const sum=(o.items||[]).map(it=>itemLabel(it)+" x"+it.qty).join(", ");
